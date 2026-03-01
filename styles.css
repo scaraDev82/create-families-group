@@ -126,6 +126,10 @@ button.danger {
   background: var(--danger);
 }
 
+button.secondary {
+  background: #6b7280;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

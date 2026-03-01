@@ -32,6 +32,7 @@ create table if not exists public.group_entries (
   group_id uuid not null references public.groups(id) on delete cascade,
   family_id uuid not null references public.families(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
+  entry_type text not null default 'family' check (entry_type in ('family', 'staff')),
   boys integer not null default 0,
   girls integer not null default 0,
   created_at timestamptz not null default now(),
@@ -103,3 +104,14 @@ for update using (auth.uid() = user_id);
 drop policy if exists group_entries_delete_own on public.group_entries;
 create policy group_entries_delete_own on public.group_entries
 for delete using (auth.uid() = user_id);
+
+-- Migration for existing projects
+alter table public.group_entries
+add column if not exists entry_type text not null default 'family';
+
+alter table public.group_entries
+drop constraint if exists group_entries_entry_type_check;
+
+alter table public.group_entries
+add constraint group_entries_entry_type_check
+check (entry_type in ('family', 'staff'));

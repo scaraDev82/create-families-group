@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Family Group Manager - Group Editor</title>
+    <title>Gestion des Groupes - Éditeur</title>
     <meta name="theme-color" content="#0f766e" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="styles.css" />
@@ -11,72 +11,80 @@
   <body data-page="group-editor">
     <main class="container">
       <header class="header-row">
-        <h1>Family Group Manager</h1>
+        <h1>Gestion des Groupes</h1>
         <div class="session-box">
           <span id="user-email"></span>
-          <button id="logout-btn" type="button">Log out</button>
+          <button id="logout-btn" type="button">Se déconnecter</button>
         </div>
       </header>
 
       <nav class="tabs">
-        <a class="tab" href="/index.html">Families</a>
-        <a class="tab active" href="/group-editor.html">Group Editor</a>
-        <a class="tab" href="/saved-groups.html">Saved Groups</a>
+        <a class="tab" href="/index.html">Familles</a>
+        <a class="tab active" href="/group-editor.html">Éditeur de groupe</a>
+        <a class="tab" href="/saved-groups.html">Groupes enregistrés</a>
       </nav>
 
       <section class="card">
-        <h2>Create Or Edit Group</h2>
+        <h2>Créer ou modifier un groupe</h2>
         <form id="group-meta-form" class="grid-form">
           <label>
-            Group title
-            <input type="text" id="groupTitle" placeholder="Example: Sunday Group A" required />
+            Titre du groupe
+            <input type="text" id="groupTitle" placeholder="Exemple : Groupe Dimanche A" required />
           </label>
 
           <label>
-            Number of professores
+            Nombre de professeurs
             <input type="number" id="professores" min="0" value="0" required />
           </label>
 
           <label>
-            Number of drivers
+            Nombre de chauffeurs
             <input type="number" id="groupDrivers" min="0" value="0" required />
           </label>
 
           <label>
-            Target total kids
+            Objectif total enfants
             <input type="number" id="targetKids" min="0" value="0" required />
           </label>
 
           <label>
-            Arrival date
+            Date d'arrivée
             <input type="date" id="arrivalDate" required />
           </label>
 
           <label>
-            Departure date
+            Date de départ
             <input type="date" id="departureDate" required />
           </label>
         </form>
 
         <div class="row">
           <label>
-            Pick family
+            Choisir une famille
             <select id="family-picker"></select>
           </label>
-          <button id="add-to-list" type="button">Import family to group</button>
+          <label>
+            Type dans le groupe
+            <select id="entry-kind">
+              <option value="family" selected>Famille (enfants)</option>
+              <option value="staff">Prof/Chauffeur</option>
+            </select>
+          </label>
+          <button id="add-to-list" type="button">Ajouter au groupe</button>
         </div>
 
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Last name</th>
-                <th>Address</th>
-                <th>Phone</th>
-                <th>Dog</th>
-                <th>Cat</th>
-                <th>Boys</th>
-                <th>Girls</th>
+                <th>Nom</th>
+                <th>Adresse</th>
+                <th>Téléphone</th>
+                <th>Type</th>
+                <th>Chien</th>
+                <th>Chat</th>
+                <th>Garçons</th>
+                <th>Filles</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -85,8 +93,8 @@
         </div>
 
         <div class="row">
-          <button id="save-group" type="button">Save group</button>
-          <button id="new-group" type="button">New empty group</button>
+          <button id="save-group" type="button">Enregistrer groupe</button>
+          <button id="new-group" type="button">Nouveau groupe vide</button>
         </div>
 
         <div class="feedback" id="feedback"></div>

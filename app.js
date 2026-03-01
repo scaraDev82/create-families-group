@@ -10,6 +10,7 @@ const targetKidsInput = document.getElementById("targetKids");
 const arrivalDateInput = document.getElementById("arrivalDate");
 const departureDateInput = document.getElementById("departureDate");
 const familyPicker = document.getElementById("family-picker");
+const entryKindSelect = document.getElementById("entry-kind");
 const addToListButton = document.getElementById("add-to-list");
 const groupTableBody = document.getElementById("group-table-body");
 const saveGroupButton = document.getElementById("save-group");
@@ -20,6 +21,8 @@ const kidsCompare = document.getElementById("kids-compare");
 const groupSummary = document.getElementById("group-summary");
 
 const familyForm = document.getElementById("family-form");
+const familySubmitBtn = document.getElementById("family-submit-btn");
+const familyCancelEditBtn = document.getElementById("family-cancel-edit");
 const familyTableBody = document.getElementById("family-table-body");
 const savedGroupsBody = document.getElementById("saved-groups-body");
 const userEmail = document.getElementById("user-email");
@@ -30,6 +33,7 @@ let draftKey = "group-draft-v1";
 let families = [];
 let groups = [];
 let currentGroup = createEmptyGroup();
+let editingFamilyId = null;
 
 await bootstrap();
 
@@ -37,7 +41,7 @@ async function bootstrap() {
   registerServiceWorker();
 
   if (!isSupabaseConfigured) {
-    setFeedback("Supabase is not configured. Update config.js first.", "error");
+    setFeedback("Supabase n'est pas configuré. Mettez à jour config.js.", "error");
     return;
   }
 
@@ -48,7 +52,6 @@ async function bootstrap() {
 
   draftKey = `group-draft-v1:${session.user.id}`;
   bindSessionUi();
-
   await loadRemoteData();
 
   if (page === "families") {
@@ -74,22 +77,16 @@ function registerServiceWorker() {
 
 async function requireSession() {
   const { data, error } = await supabase.auth.getSession();
-  if (error) {
+  if (error || !data.session) {
     redirectToLogin();
     return null;
   }
-
-  if (!data.session) {
-    redirectToLogin();
-    return null;
-  }
-
   return data.session;
 }
 
 function bindSessionUi() {
   if (userEmail) {
-    userEmail.textContent = session.user.email || "Logged in";
+    userEmail.textContent = session.user.email || "Connecté";
   }
 
   if (logoutButton) {
@@ -105,18 +102,39 @@ function redirectToLogin() {
   window.location.href = `/login.html?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
+async function fetchGroupEntries(groupIds) {
+  if (groupIds.length === 0) {
+    return [];
+  }
+
+  let entriesRes = await supabase
+    .from("group_entries")
+    .select("id,group_id,family_id,boys,girls,entry_type")
+    .in("group_id", groupIds);
+
+  if (entriesRes.error && String(entriesRes.error.message || "").includes("entry_type")) {
+    entriesRes = await supabase.from("group_entries").select("id,group_id,family_id,boys,girls").in("group_id", groupIds);
+  }
+
+  if (entriesRes.error) {
+    throw new Error(entriesRes.error.message);
+  }
+
+  return entriesRes.data || [];
+}
+
 async function loadRemoteData() {
   const familiesRes = await supabase
     .from("families")
-    .select("id,last_name,address,phone,has_dog,has_cat")
-    .order("last_name", { ascending: true });
+    .select("id,last_name,address,phone,has_dog,has_cat,created_at")
+    .order("created_at", { ascending: false });
 
   if (familiesRes.error) {
-    setFeedback(`Failed loading families: ${familiesRes.error.message}`, "error");
+    setFeedback(`Erreur chargement familles: ${familiesRes.error.message}`, "error");
     return;
   }
 
-  families = familiesRes.data.map((row) => ({
+  families = (familiesRes.data || []).map((row) => ({
     id: row.id,
     lastName: row.last_name,
     address: row.address,
@@ -131,36 +149,30 @@ async function loadRemoteData() {
     .order("arrival_date", { ascending: false });
 
   if (groupsRes.error) {
-    setFeedback(`Failed loading groups: ${groupsRes.error.message}`, "error");
+    setFeedback(`Erreur chargement groupes: ${groupsRes.error.message}`, "error");
     return;
   }
 
   const groupRows = groupsRes.data || [];
   const groupIds = groupRows.map((row) => row.id);
+  const entriesByGroupId = new Map();
 
-  let entriesByGroupId = new Map();
-
-  if (groupIds.length > 0) {
-    const entriesRes = await supabase
-      .from("group_entries")
-      .select("id,group_id,family_id,boys,girls")
-      .in("group_id", groupIds);
-
-    if (entriesRes.error) {
-      setFeedback(`Failed loading group entries: ${entriesRes.error.message}`, "error");
-      return;
-    }
-
-    for (const entry of entriesRes.data || []) {
+  try {
+    const entries = await fetchGroupEntries(groupIds);
+    for (const entry of entries) {
       const list = entriesByGroupId.get(entry.group_id) || [];
       list.push({
         id: entry.id,
         familyId: entry.family_id,
         boys: entry.boys || 0,
         girls: entry.girls || 0,
+        entryType: entry.entry_type || "family",
       });
       entriesByGroupId.set(entry.group_id, list);
     }
+  } catch (error) {
+    setFeedback(`Erreur chargement entrées: ${error.message}`, "error");
+    return;
   }
 
   groups = groupRows.map((row) => ({
@@ -190,29 +202,62 @@ function setupFamiliesPage() {
     const hasCat = document.getElementById("hasCat").value;
 
     if (!lastName || !address || !phone) {
-      setFeedback("Last name, address and phone are required.", "error");
+      setFeedback("Nom, adresse et téléphone sont obligatoires.", "error");
       return;
     }
 
-    const { error } = await supabase.from("families").insert({
-      user_id: session.user.id,
-      last_name: lastName,
-      address,
-      phone,
-      has_dog: hasDog,
-      has_cat: hasCat,
-    });
+    if (editingFamilyId) {
+      const updateRes = await supabase
+        .from("families")
+        .update({ last_name: lastName, address, phone, has_dog: hasDog, has_cat: hasCat })
+        .eq("id", editingFamilyId);
 
-    if (error) {
-      setFeedback(`Failed adding family: ${error.message}`, "error");
-      return;
+      if (updateRes.error) {
+        setFeedback(`Erreur modification famille: ${updateRes.error.message}`, "error");
+        return;
+      }
+
+      setFeedback("Famille modifiée.", "success");
+    } else {
+      const insertRes = await supabase.from("families").insert({
+        user_id: session.user.id,
+        last_name: lastName,
+        address,
+        phone,
+        has_dog: hasDog,
+        has_cat: hasCat,
+      });
+
+      if (insertRes.error) {
+        setFeedback(`Erreur ajout famille: ${insertRes.error.message}`, "error");
+        return;
+      }
+
+      setFeedback("Famille ajoutée.", "success");
     }
 
-    familyForm.reset();
+    resetFamilyForm();
     await loadRemoteData();
     renderFamilyTable();
-    setFeedback("Family added.", "success");
   });
+
+  if (familyCancelEditBtn) {
+    familyCancelEditBtn.addEventListener("click", () => {
+      resetFamilyForm();
+      setFeedback("Modification annulée.", "info");
+    });
+  }
+}
+
+function resetFamilyForm() {
+  editingFamilyId = null;
+  familyForm?.reset();
+  if (familySubmitBtn) {
+    familySubmitBtn.textContent = "Ajouter famille";
+  }
+  if (familyCancelEditBtn) {
+    familyCancelEditBtn.style.display = "none";
+  }
 }
 
 function setupGroupEditorPage() {
@@ -234,10 +279,10 @@ function setupGroupEditorPage() {
     if (found) {
       currentGroup = structuredClone(found);
       currentGroup.id = null;
-      currentGroup.title = `${found.title} (copy)`;
+      currentGroup.title = `${found.title} (copie)`;
       currentGroup.entries = currentGroup.entries.map((entry) => ({ ...entry, id: crypto.randomUUID() }));
       saveDraftGroup();
-      setFeedback("Group duplicated. Review dates, then save.", "info");
+      setFeedback("Groupe dupliqué. Vérifiez les dates puis enregistrez.", "info");
     }
   }
 
@@ -246,7 +291,7 @@ function setupGroupEditorPage() {
       syncCurrentGroupFromForm();
 
       if (!isDateRangeValid(currentGroup.arrivalDate, currentGroup.departureDate)) {
-        setFeedback("Please set a valid arrival/departure date before importing families.", "error");
+        setFeedback("Définissez des dates d'arrivée/départ valides.", "error");
         return;
       }
 
@@ -256,15 +301,17 @@ function setupGroupEditorPage() {
         return;
       }
 
-      if (currentGroup.entries.some((entry) => entry.familyId === familyId)) {
-        setFeedback("This family is already in the current group.", "info");
+      const entryType = entryKindSelect?.value === "staff" ? "staff" : "family";
+      const duplicate = currentGroup.entries.some((entry) => entry.familyId === familyId);
+      if (duplicate) {
+        setFeedback("Cette famille est déjà présente dans ce groupe.", "info");
         return;
       }
 
       const conflict = findFamilyConflictAcrossGroups(familyId, currentGroup);
       if (conflict) {
         setFeedback(
-          `This family is already in overlapping dates: ${conflict.title} (${conflict.arrivalDate} to ${conflict.departureDate}).`,
+          `Cette famille est déjà planifiée sur des dates qui se chevauchent : ${conflict.title} (${conflict.arrivalDate} à ${conflict.departureDate}).`,
           "error"
         );
         return;
@@ -275,12 +322,13 @@ function setupGroupEditorPage() {
         familyId,
         boys: 0,
         girls: 0,
+        entryType,
       });
 
       saveDraftGroup();
       renderGroupTable();
       renderGroupSummary();
-      setFeedback(`Family '${family.lastName}' imported.`, "success");
+      setFeedback(`Famille '${family.lastName}' ajoutée au groupe.`, "success");
     });
   }
 
@@ -289,19 +337,19 @@ function setupGroupEditorPage() {
       syncCurrentGroupFromForm();
 
       if (!currentGroup.title) {
-        setFeedback("Group title is required.", "error");
+        setFeedback("Le titre du groupe est obligatoire.", "error");
         return;
       }
 
       if (!isDateRangeValid(currentGroup.arrivalDate, currentGroup.departureDate)) {
-        setFeedback("Arrival date must be before or equal to departure date.", "error");
+        setFeedback("La date d'arrivée doit être antérieure ou égale à la date de départ.", "error");
         return;
       }
 
       const conflict = findGroupWideConflict(currentGroup);
       if (conflict) {
         setFeedback(
-          `Cannot save. Family '${conflict.familyName}' conflicts with group '${conflict.groupTitle}'.`,
+          `Impossible d'enregistrer. La famille '${conflict.familyName}' entre en conflit avec le groupe '${conflict.groupTitle}'.`,
           "error"
         );
         return;
@@ -320,7 +368,7 @@ function setupGroupEditorPage() {
       if (!currentGroup.id) {
         const insertRes = await supabase.from("groups").insert(payload).select("id").single();
         if (insertRes.error) {
-          setFeedback(`Failed saving group: ${insertRes.error.message}`, "error");
+          setFeedback(`Erreur enregistrement groupe: ${insertRes.error.message}`, "error");
           return;
         }
 
@@ -328,18 +376,27 @@ function setupGroupEditorPage() {
       } else {
         const updateRes = await supabase.from("groups").update(payload).eq("id", currentGroup.id);
         if (updateRes.error) {
-          setFeedback(`Failed updating group: ${updateRes.error.message}`, "error");
+          setFeedback(`Erreur mise à jour groupe: ${updateRes.error.message}`, "error");
           return;
         }
 
         const deleteEntriesRes = await supabase.from("group_entries").delete().eq("group_id", currentGroup.id);
         if (deleteEntriesRes.error) {
-          setFeedback(`Failed updating group entries: ${deleteEntriesRes.error.message}`, "error");
+          setFeedback(`Erreur mise à jour entrées groupe: ${deleteEntriesRes.error.message}`, "error");
           return;
         }
       }
 
-      const entryRows = currentGroup.entries.map((entry) => ({
+      const withTypeRows = currentGroup.entries.map((entry) => ({
+        group_id: currentGroup.id,
+        family_id: entry.familyId,
+        boys: entry.boys,
+        girls: entry.girls,
+        entry_type: entry.entryType || "family",
+        user_id: session.user.id,
+      }));
+
+      const fallbackRows = currentGroup.entries.map((entry) => ({
         group_id: currentGroup.id,
         family_id: entry.familyId,
         boys: entry.boys,
@@ -347,17 +404,22 @@ function setupGroupEditorPage() {
         user_id: session.user.id,
       }));
 
-      if (entryRows.length > 0) {
-        const entriesRes = await supabase.from("group_entries").insert(entryRows);
+      if (withTypeRows.length > 0) {
+        let entriesRes = await supabase.from("group_entries").insert(withTypeRows);
+
+        if (entriesRes.error && String(entriesRes.error.message || "").includes("entry_type")) {
+          entriesRes = await supabase.from("group_entries").insert(fallbackRows);
+        }
+
         if (entriesRes.error) {
-          setFeedback(`Failed saving group entries: ${entriesRes.error.message}`, "error");
+          setFeedback(`Erreur enregistrement entrées: ${entriesRes.error.message}`, "error");
           return;
         }
       }
 
       saveDraftGroup();
       await loadRemoteData();
-      setFeedback("Group saved.", "success");
+      setFeedback("Groupe enregistré.", "success");
     });
   }
 
@@ -368,7 +430,7 @@ function setupGroupEditorPage() {
       setFormFromCurrentGroup();
       renderGroupTable();
       renderGroupSummary();
-      setFeedback("Ready to create a new group.", "info");
+      setFeedback("Prêt pour créer un nouveau groupe.", "info");
     });
   }
 
@@ -406,24 +468,54 @@ function renderFamilyTable() {
       <td>${escapeHtml(family.lastName)}</td>
       <td>${escapeHtml(family.address)}</td>
       <td>${escapeHtml(family.phone)}</td>
-      <td>${escapeHtml(family.hasDog)}</td>
-      <td>${escapeHtml(family.hasCat)}</td>
-      <td><button type="button" class="danger" data-remove-family="${family.id}">Remove</button></td>
+      <td>${formatPetLabel(family.hasDog)}</td>
+      <td>${formatPetLabel(family.hasCat)}</td>
+      <td>
+        <div class="inline-actions">
+          <button type="button" data-edit-family="${family.id}">Modifier</button>
+          <button type="button" class="danger" data-remove-family="${family.id}">Supprimer</button>
+        </div>
+      </td>
     `;
     familyTableBody.appendChild(row);
+  });
+
+  familyTableBody.querySelectorAll("[data-edit-family]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const family = families.find((item) => item.id === button.dataset.editFamily);
+      if (!family) {
+        return;
+      }
+
+      editingFamilyId = family.id;
+      document.getElementById("lastName").value = family.lastName;
+      document.getElementById("address").value = family.address;
+      document.getElementById("phone").value = family.phone;
+      document.getElementById("hasDog").value = family.hasDog;
+      document.getElementById("hasCat").value = family.hasCat;
+
+      if (familySubmitBtn) {
+        familySubmitBtn.textContent = "Enregistrer modification";
+      }
+      if (familyCancelEditBtn) {
+        familyCancelEditBtn.style.display = "inline-block";
+      }
+
+      setFeedback(`Modification de '${family.lastName}'.`, "info");
+    });
   });
 
   familyTableBody.querySelectorAll("[data-remove-family]").forEach((button) => {
     button.addEventListener("click", async () => {
       const removeRes = await supabase.from("families").delete().eq("id", button.dataset.removeFamily);
       if (removeRes.error) {
-        setFeedback(`Failed removing family: ${removeRes.error.message}`, "error");
+        setFeedback(`Erreur suppression famille: ${removeRes.error.message}`, "error");
         return;
       }
 
       await loadRemoteData();
       renderFamilyTable();
-      setFeedback("Family removed.", "success");
+      setFeedback("Famille supprimée.", "success");
     });
   });
 }
@@ -438,7 +530,7 @@ function renderFamilyPicker() {
   if (families.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "No families saved";
+    option.textContent = "Aucune famille enregistrée";
     familyPicker.appendChild(option);
     return;
   }
@@ -464,16 +556,23 @@ function renderGroupTable() {
       return;
     }
 
+    const isStaff = entry.entryType === "staff";
+    if (isStaff) {
+      entry.boys = 0;
+      entry.girls = 0;
+    }
+
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${escapeHtml(family.lastName)}</td>
       <td>${escapeHtml(family.address)}</td>
       <td>${escapeHtml(family.phone)}</td>
-      <td>${escapeHtml(family.hasDog)}</td>
-      <td>${escapeHtml(family.hasCat)}</td>
-      <td><input type="number" class="small-input" min="0" value="${entry.boys}" data-boys="${entry.id}" /></td>
-      <td><input type="number" class="small-input" min="0" value="${entry.girls}" data-girls="${entry.id}" /></td>
-      <td><button type="button" class="danger" data-remove-entry="${entry.id}">Remove</button></td>
+      <td>${isStaff ? "Prof/Chauffeur" : "Famille"}</td>
+      <td>${formatPetLabel(family.hasDog)}</td>
+      <td>${formatPetLabel(family.hasCat)}</td>
+      <td><input type="number" class="small-input" min="0" value="${entry.boys}" data-boys="${entry.id}" ${isStaff ? "disabled" : ""} /></td>
+      <td><input type="number" class="small-input" min="0" value="${entry.girls}" data-girls="${entry.id}" ${isStaff ? "disabled" : ""} /></td>
+      <td><button type="button" class="danger" data-remove-entry="${entry.id}">Supprimer</button></td>
     `;
 
     groupTableBody.appendChild(row);
@@ -491,7 +590,7 @@ function renderGroupTable() {
   groupTableBody.querySelectorAll("[data-boys]").forEach((input) => {
     input.addEventListener("input", () => {
       const entry = currentGroup.entries.find((item) => item.id === input.dataset.boys);
-      if (!entry) {
+      if (!entry || entry.entryType === "staff") {
         return;
       }
       entry.boys = Math.max(0, Number(input.value) || 0);
@@ -503,7 +602,7 @@ function renderGroupTable() {
   groupTableBody.querySelectorAll("[data-girls]").forEach((input) => {
     input.addEventListener("input", () => {
       const entry = currentGroup.entries.find((item) => item.id === input.dataset.girls);
-      if (!entry) {
+      if (!entry || entry.entryType === "staff") {
         return;
       }
       entry.girls = Math.max(0, Number(input.value) || 0);
@@ -537,10 +636,10 @@ function renderSavedGroupsTable() {
       <td>${totals.children}</td>
       <td>
         <div class="inline-actions">
-          <button type="button" data-open-group="${group.id}">Open</button>
-          <button type="button" data-duplicate-group="${group.id}">Duplicate</button>
+          <button type="button" data-open-group="${group.id}">Ouvrir</button>
+          <button type="button" data-duplicate-group="${group.id}">Dupliquer</button>
           <button type="button" data-pdf-group="${group.id}">PDF</button>
-          <button type="button" class="danger" data-delete-group="${group.id}">Delete</button>
+          <button type="button" class="danger" data-delete-group="${group.id}">Supprimer</button>
         </div>
       </td>
     `;
@@ -568,13 +667,13 @@ function renderSavedGroupsTable() {
     button.addEventListener("click", async () => {
       const deleteRes = await supabase.from("groups").delete().eq("id", button.dataset.deleteGroup);
       if (deleteRes.error) {
-        setFeedback(`Failed deleting group: ${deleteRes.error.message}`, "error");
+        setFeedback(`Erreur suppression groupe: ${deleteRes.error.message}`, "error");
         return;
       }
 
       await loadRemoteData();
       renderSavedGroupsTable();
-      setFeedback("Group deleted.", "success");
+      setFeedback("Groupe supprimé.", "success");
     });
   });
 }
@@ -601,7 +700,7 @@ function findGroupWideConflict(candidateGroup) {
       const family = families.find((item) => item.id === entry.familyId);
       return {
         groupTitle: conflictGroup.title,
-        familyName: family ? family.lastName : "Unknown",
+        familyName: family ? family.lastName : "Inconnu",
       };
     }
   }
@@ -615,23 +714,24 @@ function renderGroupSummary() {
   }
 
   const totals = getTotals(currentGroup.entries);
-  const title = currentGroup.title || "(no title)";
-  const arrival = currentGroup.arrivalDate || "(no arrival date)";
-  const departure = currentGroup.departureDate || "(no departure date)";
+  const title = currentGroup.title || "(sans titre)";
+  const arrival = currentGroup.arrivalDate || "(sans date arrivée)";
+  const departure = currentGroup.departureDate || "(sans date départ)";
   const targetKids = currentGroup.targetKids ?? 0;
   const diff = totals.children - targetKids;
   const sign = diff > 0 ? "+" : "";
 
   if (kidsTotal) {
-    kidsTotal.textContent = `Total kids: ${totals.children}`;
+    kidsTotal.textContent = `Total enfants: ${totals.children}`;
   }
+
   if (kidsCompare) {
-    kidsCompare.textContent = `Target kids: ${targetKids} | Difference: ${sign}${diff}`;
+    kidsCompare.textContent = `Objectif enfants: ${targetKids} | Écart: ${sign}${diff}`;
   }
 
   groupSummary.textContent =
-    `Group: ${title} | Arrival: ${arrival} | Departure: ${departure} | Professores: ${currentGroup.professores} | Drivers: ${currentGroup.groupDrivers ?? 0} | ` +
-    `Families: ${totals.families} | Boys: ${totals.boys} | Girls: ${totals.girls}`;
+    `Groupe: ${title} | Arrivée: ${arrival} | Départ: ${departure} | Professeurs: ${currentGroup.professores} | Chauffeurs: ${currentGroup.groupDrivers ?? 0} | ` +
+    `Familles: ${totals.families} | Garçons: ${totals.boys} | Filles: ${totals.girls} | Profs/Chauffeurs assignés: ${totals.staffCount}`;
 }
 
 function exportGroupPdf(groupId) {
@@ -643,7 +743,7 @@ function exportGroupPdf(groupId) {
   const html = buildPrintableGroupHtml(group);
   const printWindow = window.open("", "_blank", "width=900,height=700");
   if (!printWindow) {
-    setFeedback("Unable to open print window. Please allow popups.", "error");
+    setFeedback("Impossible d'ouvrir la fenêtre d'impression. Autorisez les popups.", "error");
     return;
   }
 
@@ -656,7 +756,8 @@ function exportGroupPdf(groupId) {
 
 function buildPrintableGroupHtml(group) {
   const totals = getTotals(group.entries);
-  const rows = group.entries
+  const familyRows = group.entries
+    .filter((entry) => entry.entryType !== "staff")
     .map((entry) => {
       const family = families.find((item) => item.id === entry.familyId);
       if (!family) {
@@ -668,10 +769,29 @@ function buildPrintableGroupHtml(group) {
           <td>${escapeHtml(family.lastName)}</td>
           <td>${escapeHtml(family.address)}</td>
           <td>${escapeHtml(family.phone)}</td>
-          <td>${escapeHtml(family.hasDog)}</td>
-          <td>${escapeHtml(family.hasCat)}</td>
+          <td>${formatPetLabel(family.hasDog)}</td>
+          <td>${formatPetLabel(family.hasCat)}</td>
           <td>${entry.boys}</td>
           <td>${entry.girls}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const staffRows = group.entries
+    .filter((entry) => entry.entryType === "staff")
+    .map((entry) => {
+      const family = families.find((item) => item.id === entry.familyId);
+      if (!family) {
+        return "";
+      }
+
+      return `
+        <tr>
+          <td>${escapeHtml(family.lastName)}</td>
+          <td>${escapeHtml(family.address)}</td>
+          <td>${escapeHtml(family.phone)}</td>
+          <td>Prof/Chauffeur</td>
         </tr>
       `;
     })
@@ -683,32 +803,48 @@ function buildPrintableGroupHtml(group) {
         <title>${escapeHtml(group.title)}</title>
         <style>
           body { font-family: Arial, sans-serif; padding: 16px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 12px; margin-bottom: 20px; }
           th, td { border: 1px solid #999; padding: 8px; text-align: left; }
           h1 { margin-bottom: 6px; }
+          h3 { margin-top: 20px; margin-bottom: 8px; }
           p { margin: 4px 0; }
         </style>
       </head>
       <body>
         <h1>${escapeHtml(group.title)}</h1>
-        <p>Arrival: ${escapeHtml(group.arrivalDate)} | Departure: ${escapeHtml(group.departureDate)}</p>
-        <p>Professores: ${group.professores}</p>
-        <p>Drivers: ${group.groupDrivers ?? 0}</p>
-        <p>Target kids: ${group.targetKids ?? 0}</p>
-        <p>Families: ${totals.families} | Boys: ${totals.boys} | Girls: ${totals.girls} | Total children: ${totals.children}</p>
+        <p>Arrivée: ${escapeHtml(group.arrivalDate)} | Départ: ${escapeHtml(group.departureDate)}</p>
+        <p>Professeurs: ${group.professores}</p>
+        <p>Chauffeurs: ${group.groupDrivers ?? 0}</p>
+        <p>Objectif enfants: ${group.targetKids ?? 0}</p>
+        <p>Familles: ${totals.families} | Garçons: ${totals.boys} | Filles: ${totals.girls} | Total enfants: ${totals.children}</p>
+
+        <h3>Tableau familles (enfants)</h3>
         <table>
           <thead>
             <tr>
-              <th>Last name</th>
-              <th>Address</th>
-              <th>Phone</th>
-              <th>Dog</th>
-              <th>Cat</th>
-              <th>Boys</th>
-              <th>Girls</th>
+              <th>Nom</th>
+              <th>Adresse</th>
+              <th>Téléphone</th>
+              <th>Chien</th>
+              <th>Chat</th>
+              <th>Garçons</th>
+              <th>Filles</th>
             </tr>
           </thead>
-          <tbody>${rows}</tbody>
+          <tbody>${familyRows}</tbody>
+        </table>
+
+        <h3>Tableau professeurs/chauffeurs</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Nom</th>
+              <th>Adresse</th>
+              <th>Téléphone</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody>${staffRows}</tbody>
         </table>
       </body>
     </html>
@@ -716,11 +852,15 @@ function buildPrintableGroupHtml(group) {
 }
 
 function getTotals(entries) {
-  const boys = entries.reduce((sum, entry) => sum + (entry.boys || 0), 0);
-  const girls = entries.reduce((sum, entry) => sum + (entry.girls || 0), 0);
+  const familyEntries = entries.filter((entry) => entry.entryType !== "staff");
+  const staffEntries = entries.filter((entry) => entry.entryType === "staff");
+
+  const boys = familyEntries.reduce((sum, entry) => sum + (entry.boys || 0), 0);
+  const girls = familyEntries.reduce((sum, entry) => sum + (entry.girls || 0), 0);
 
   return {
-    families: entries.length,
+    families: familyEntries.length,
+    staffCount: staffEntries.length,
     boys,
     girls,
     children: boys + girls,
@@ -800,7 +940,12 @@ function loadDraftGroup() {
       targetKids: Math.max(0, Number(parsed.targetKids) || 0),
       arrivalDate: parsed.arrivalDate || formatDate(new Date()),
       departureDate: parsed.departureDate || formatDate(new Date()),
-      entries: Array.isArray(parsed.entries) ? parsed.entries : [],
+      entries: Array.isArray(parsed.entries)
+        ? parsed.entries.map((entry) => ({
+            ...entry,
+            entryType: entry.entryType || "family",
+          }))
+        : [],
     };
   } catch {
     return null;
@@ -813,6 +958,16 @@ function isDateRangeValid(arrivalDate, departureDate) {
 
 function rangesOverlap(startA, endA, startB, endB) {
   return startA <= endB && startB <= endA;
+}
+
+function formatPetLabel(value) {
+  if (value === "in") {
+    return "intérieur";
+  }
+  if (value === "out") {
+    return "extérieur";
+  }
+  return "aucun";
 }
 
 function setFeedback(message, type = "info") {
