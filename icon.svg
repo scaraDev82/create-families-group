@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Family Group Manager icon">
+  <rect width="256" height="256" rx="48" fill="#0f766e"/>
+  <circle cx="80" cy="92" r="24" fill="#ffffff"/>
+  <circle cx="176" cy="92" r="24" fill="#ffffff"/>
+  <circle cx="128" cy="82" r="20" fill="#d1fae5"/>
+  <rect x="56" y="126" width="144" height="62" rx="22" fill="#ffffff"/>
+  <rect x="76" y="142" width="104" height="12" rx="6" fill="#0f766e"/>
+  <rect x="76" y="162" width="72" height="10" rx="5" fill="#34d399"/>
+</svg>

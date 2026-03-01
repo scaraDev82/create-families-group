@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Family Group Manager - Group Editor</title>
+    <meta name="theme-color" content="#0f766e" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="group-editor">
+    <main class="container">
+      <header class="header-row">
+        <h1>Family Group Manager</h1>
+        <div class="session-box">
+          <span id="user-email"></span>
+          <button id="logout-btn" type="button">Log out</button>
+        </div>
+      </header>
+
+      <nav class="tabs">
+        <a class="tab" href="/index.html">Families</a>
+        <a class="tab active" href="/group-editor.html">Group Editor</a>
+        <a class="tab" href="/saved-groups.html">Saved Groups</a>
+      </nav>
+
+      <section class="card">
+        <h2>Create Or Edit Group</h2>
+        <form id="group-meta-form" class="grid-form">
+          <label>
+            Group title
+            <input type="text" id="groupTitle" placeholder="Example: Sunday Group A" required />
+          </label>
+
+          <label>
+            Number of professores
+            <input type="number" id="professores" min="0" value="0" required />
+          </label>
+
+          <label>
+            Number of drivers
+            <input type="number" id="groupDrivers" min="0" value="0" required />
+          </label>
+
+          <label>
+            Target total kids
+            <input type="number" id="targetKids" min="0" value="0" required />
+          </label>
+
+          <label>
+            Arrival date
+            <input type="date" id="arrivalDate" required />
+          </label>
+
+          <label>
+            Departure date
+            <input type="date" id="departureDate" required />
+          </label>
+        </form>
+
+        <div class="row">
+          <label>
+            Pick family
+            <select id="family-picker"></select>
+          </label>
+          <button id="add-to-list" type="button">Import family to group</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Last name</th>
+                <th>Address</th>
+                <th>Phone</th>
+                <th>Dog</th>
+                <th>Cat</th>
+                <th>Boys</th>
+                <th>Girls</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="group-table-body"></tbody>
+          </table>
+        </div>
+
+        <div class="row">
+          <button id="save-group" type="button">Save group</button>
+          <button id="new-group" type="button">New empty group</button>
+        </div>
+
+        <div class="feedback" id="feedback"></div>
+        <div class="summary" id="kids-total"></div>
+        <div class="summary" id="kids-compare"></div>
+        <div class="summary" id="group-summary"></div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
