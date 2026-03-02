@@ -798,7 +798,8 @@ function renderGroupSummary() {
     kidsCompare.textContent = `Target kids: ${targetKids} | Difference: ${sign}${diff}`;
   }
 
-  groupSummary.textContent = `Group summary: total kids ${totals.children}.`;
+  const summaryDate = formatDateForSummary(currentGroup.arrivalDate, currentGroup.departureDate);
+  groupSummary.textContent = `${summaryDate} Total kids: ${totals.children}.`;
 }
 
 function exportGroupPdf(groupId) {
@@ -891,9 +892,23 @@ function buildPrintableGroupHtml(group) {
       </head>
       <body>
         <h1>${escapeHtml(group.title)}</h1>
-        <p>Arrivée: ${escapeHtml(group.arrivalDate)} | Départ: ${escapeHtml(group.departureDate)}</p>
-        <p>Professeurs: ${teacherMaleTotal}+${teacherFemaleTotal} | Chauffeurs: ${group.groupDrivers || 0}${driverFamilyNames ? " (" + driverFamilyNames + ")" : ""}</p>
+        <p>${formatDateForSummary(group.arrivalDate, group.departureDate)}</p>
+        <p>Professeurs: ${teacherMaleTotal}+${teacherFemaleTotal} | Chauffeurs: ${group.groupDrivers || 0} (${driverFamilyNames || "-"})</p>
         <p>Total enfants: ${totals.children}</p>
+
+        <h3>Tableau professeurs/chauffeurs</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Nom</th>
+              <th>Adresse</th>
+              <th>Téléphone</th>
+              <th>Profs H</th>
+              <th>Profs F</th>
+            </tr>
+          </thead>
+          <tbody>${staffRows}</tbody>
+        </table>
 
         <h3>Tableau familles</h3>
         <table>
@@ -909,20 +924,6 @@ function buildPrintableGroupHtml(group) {
             </tr>
           </thead>
           <tbody>${familyRows}</tbody>
-        </table>
-
-        <h3>Tableau professeurs/chauffeurs</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Nom</th>
-              <th>Adresse</th>
-              <th>Téléphone</th>
-              <th>Profs H</th>
-              <th>Profs F</th>
-            </tr>
-          </thead>
-          <tbody>${staffRows}</tbody>
         </table>
       </body>
     </html>
@@ -1054,7 +1055,7 @@ function formatPetLabelFr(value) {
   if (value === "out") {
     return "extérieur";
   }
-  return "aucun";
+  return "-";
 }
 
 function setFeedback(message, type = "info") {
@@ -1064,6 +1065,18 @@ function setFeedback(message, type = "info") {
 
   feedback.className = `feedback show feedback-${type}`;
   feedback.textContent = message;
+}
+
+
+function formatDateForSummary(arrivalDate, departureDate) {
+  const a = String(arrivalDate || "").split("-");
+  const d = String(departureDate || "").split("-");
+
+  if (a.length < 3 || d.length < 3) {
+    return "--/--/----";
+  }
+
+  return `${a[2]}-${a[1]}/${d[2]}-${d[1]}-${d[0]}`;
 }
 
 function formatDate(date) {
