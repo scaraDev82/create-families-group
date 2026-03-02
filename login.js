@@ -7,7 +7,7 @@ const emailInput = document.getElementById("email");
 registerServiceWorker();
 
 if (!isSupabaseConfigured) {
-  setFeedback("Supabase n'est pas configuré. Mettez à jour config.js.", "error");
+  setFeedback("Supabase is not configured. Update your local config.js.", "error");
 } else {
   const params = new URLSearchParams(window.location.search);
   const returnTo = sanitizeReturnTo(params.get("returnTo"));
@@ -22,7 +22,7 @@ if (!isSupabaseConfigured) {
 
     const email = emailInput.value.trim();
     if (!email) {
-      setFeedback("L'e-mail est obligatoire.", "error");
+      setFeedback("Email is required.", "error");
       return;
     }
 
@@ -34,11 +34,11 @@ if (!isSupabaseConfigured) {
     });
 
     if (error) {
-      setFeedback(`Échec de connexion: ${error.message}`, "error");
+      setFeedback(`Login failed: ${error.message}`, "error");
       return;
     }
 
-    setFeedback("Lien magique envoyé. Vérifiez votre e-mail et ouvrez le lien sur cet appareil.", "success");
+    setFeedback("Magic link sent. Check your email and open it on this device.", "success");
   });
 }
 

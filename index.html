@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gestion des Groupes - Familles</title>
+    <title>Group Manager - Families</title>
     <meta name="theme-color" content="#0f766e" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="styles.css" />
@@ -11,57 +11,57 @@
   <body data-page="families">
     <main class="container">
       <header class="header-row">
-        <h1>Gestion des Groupes</h1>
+        <h1>Group Manager</h1>
         <div class="session-box">
           <span id="user-email"></span>
-          <button id="logout-btn" type="button">Se déconnecter</button>
+          <button id="logout-btn" type="button">Log out</button>
         </div>
       </header>
 
       <nav class="tabs">
-        <a class="tab active" href="/index.html">Familles</a>
-        <a class="tab" href="/group-editor.html">Éditeur de groupe</a>
-        <a class="tab" href="/saved-groups.html">Groupes enregistrés</a>
+        <a class="tab active" href="/index.html">Families</a>
+        <a class="tab" href="/group-editor.html">Group Editor</a>
+        <a class="tab" href="/saved-groups.html">Saved Groups</a>
       </nav>
 
       <section class="card">
-        <h2>Base de données des familles</h2>
+        <h2>Family Database</h2>
         <form id="family-form" class="grid-form">
           <label>
-            Nom de famille
+            Last name
             <input type="text" id="lastName" required />
           </label>
 
           <label>
-            Adresse
+            Address
             <input type="text" id="address" required />
           </label>
 
           <label>
-            Téléphone
+            Phone
             <input type="tel" id="phone" required />
           </label>
 
           <label>
-            Chien
+            Dog
             <select id="hasDog" required>
-              <option value="none" selected>aucun</option>
-              <option value="in">intérieur</option>
-              <option value="out">extérieur</option>
+              <option value="none" selected>none</option>
+              <option value="in">in</option>
+              <option value="out">out</option>
             </select>
           </label>
 
           <label>
-            Chat
+            Cat
             <select id="hasCat" required>
-              <option value="none" selected>aucun</option>
-              <option value="in">intérieur</option>
-              <option value="out">extérieur</option>
+              <option value="none" selected>none</option>
+              <option value="in">in</option>
+              <option value="out">out</option>
             </select>
           </label>
 
-          <button id="family-submit-btn" type="submit">Ajouter famille</button>
-          <button id="family-cancel-edit" type="button" class="secondary" style="display: none">Annuler modification</button>
+          <button id="family-submit-btn" type="submit">Add family</button>
+          <button id="family-cancel-edit" type="button" class="secondary" style="display: none">Cancel edit</button>
         </form>
 
         <div class="feedback" id="feedback"></div>
@@ -70,11 +70,11 @@
           <table>
             <thead>
               <tr>
-                <th>Nom</th>
-                <th>Adresse</th>
-                <th>Téléphone</th>
-                <th>Chien</th>
-                <th>Chat</th>
+                <th>Last name</th>
+                <th>Address</th>
+                <th>Phone</th>
+                <th>Dog</th>
+                <th>Cat</th>
                 <th>Actions</th>
               </tr>
             </thead>

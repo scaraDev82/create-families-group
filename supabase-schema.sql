@@ -115,3 +115,17 @@ drop constraint if exists group_entries_entry_type_check;
 alter table public.group_entries
 add constraint group_entries_entry_type_check
 check (entry_type in ('family', 'staff'));
+
+-- Migration for teacher counts per group entry
+alter table public.group_entries
+add column if not exists male_teachers integer not null default 0;
+
+alter table public.group_entries
+add column if not exists female_teachers integer not null default 0;
+
+alter table public.group_entries
+drop constraint if exists group_entries_teachers_non_negative;
+
+alter table public.group_entries
+add constraint group_entries_teachers_non_negative
+check (male_teachers >= 0 and female_teachers >= 0);
