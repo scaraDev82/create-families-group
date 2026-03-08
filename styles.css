@@ -155,6 +155,10 @@ td {
   flex-wrap: wrap;
 }
 
+#family-search {
+  min-width: 240px;
+}
+
 .summary {
   margin-top: 10px;
   font-weight: 600;

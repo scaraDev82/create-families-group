@@ -10,7 +10,7 @@ const targetKidsInput = document.getElementById("targetKids");
 const arrivalDateInput = document.getElementById("arrivalDate");
 const departureDateInput = document.getElementById("departureDate");
 const familyPicker = document.getElementById("family-picker");
-const entryKindSelect = document.getElementById("entry-kind");
+const familySearchInput = document.getElementById("family-search");
 const addToListButton = document.getElementById("add-to-list");
 const groupTableBody = document.getElementById("group-table-body");
 const saveGroupButton = document.getElementById("save-group");
@@ -36,6 +36,7 @@ let currentGroup = createEmptyGroup();
 let editingFamilyId = null;
 let schemaSupportsEntryType = true;
 let schemaSupportsTeacherCounts = true;
+let schemaSupportsEntryDrivers = true;
 
 await bootstrap();
 
@@ -111,23 +112,29 @@ async function fetchGroupEntries(groupIds) {
 
   schemaSupportsEntryType = true;
   schemaSupportsTeacherCounts = true;
+  schemaSupportsEntryDrivers = true;
 
   let entriesRes = await supabase
     .from("group_entries")
-    .select("id,group_id,family_id,boys,girls,entry_type,male_teachers,female_teachers")
+    .select("id,group_id,family_id,boys,girls,entry_type,male_teachers,female_teachers,drivers")
     .in("group_id", groupIds);
 
   if (entriesRes.error && String(entriesRes.error.message || "").includes("entry_type")) {
     schemaSupportsEntryType = false;
     entriesRes = await supabase
       .from("group_entries")
-      .select("id,group_id,family_id,boys,girls,male_teachers,female_teachers")
+      .select("id,group_id,family_id,boys,girls,male_teachers,female_teachers,drivers")
       .in("group_id", groupIds);
   }
 
   if (entriesRes.error && String(entriesRes.error.message || "").includes("male_teachers")) {
     schemaSupportsTeacherCounts = false;
     entriesRes = await supabase.from("group_entries").select("id,group_id,family_id,boys,girls").in("group_id", groupIds);
+  }
+
+  if (entriesRes.error && String(entriesRes.error.message || "").includes("drivers")) {
+    schemaSupportsEntryDrivers = false;
+    entriesRes = await supabase.from("group_entries").select("id,group_id,family_id,boys,girls,male_teachers,female_teachers").in("group_id", groupIds);
   }
 
   if (entriesRes.error) {
@@ -180,9 +187,9 @@ async function loadRemoteData() {
         familyId: entry.family_id,
         boys: entry.boys || 0,
         girls: entry.girls || 0,
-        entryType: entry.entry_type || "family",
         maleTeachers: entry.male_teachers || 0,
         femaleTeachers: entry.female_teachers || 0,
+        drivers: entry.drivers || 0,
       });
       entriesByGroupId.set(entry.group_id, list);
     }
@@ -302,6 +309,12 @@ function setupGroupEditorPage() {
     }
   }
 
+  if (familySearchInput) {
+    familySearchInput.addEventListener("input", () => {
+      renderFamilyPicker();
+    });
+  }
+
   if (addToListButton) {
     addToListButton.addEventListener("click", () => {
       syncCurrentGroupFromForm();
@@ -317,7 +330,6 @@ function setupGroupEditorPage() {
         return;
       }
 
-      const entryType = entryKindSelect?.value === "staff" ? "staff" : "family";
       const duplicate = currentGroup.entries.some((entry) => entry.familyId === familyId);
       if (duplicate) {
         setFeedback("This family is already in this group.", "info");
@@ -338,9 +350,9 @@ function setupGroupEditorPage() {
         familyId,
         boys: 0,
         girls: 0,
-        entryType,
         maleTeachers: 0,
         femaleTeachers: 0,
+        drivers: 0,
       });
 
       saveDraftGroup();
@@ -373,16 +385,16 @@ function setupGroupEditorPage() {
         return;
       }
 
-      const needsStaffType = currentGroup.entries.some((entry) => (entry.entryType || "family") === "staff");
       const needsTeacherCounts = currentGroup.entries.some((entry) => (entry.maleTeachers || 0) + (entry.femaleTeachers || 0) > 0);
-
-      if (needsStaffType && !schemaSupportsEntryType) {
-        setFeedback("Database migration required: add column group_entries.entry_type before saving staff rows.", "error");
-        return;
-      }
+      const needsEntryDrivers = currentGroup.entries.some((entry) => (entry.drivers || 0) > 0);
 
       if (needsTeacherCounts && !schemaSupportsTeacherCounts) {
         setFeedback("Database migration required: add columns group_entries.male_teachers and group_entries.female_teachers before saving teacher counts.", "error");
+        return;
+      }
+
+      if (needsEntryDrivers && !schemaSupportsEntryDrivers) {
+        setFeedback("Database migration required: add column group_entries.drivers before saving driver counts.", "error");
         return;
       }
 
@@ -423,18 +435,19 @@ function setupGroupEditorPage() {
         family_id: entry.familyId,
         boys: entry.boys,
         girls: entry.girls,
-        entry_type: entry.entryType || "family",
         male_teachers: entry.maleTeachers || 0,
         female_teachers: entry.femaleTeachers || 0,
+        drivers: entry.drivers || 0,
         user_id: session.user.id,
       }));
 
-      const withTypeRows = currentGroup.entries.map((entry) => ({
+      const withTeacherRows = currentGroup.entries.map((entry) => ({
         group_id: currentGroup.id,
         family_id: entry.familyId,
         boys: entry.boys,
         girls: entry.girls,
-        entry_type: entry.entryType || "family",
+        male_teachers: entry.maleTeachers || 0,
+        female_teachers: entry.femaleTeachers || 0,
         user_id: session.user.id,
       }));
 
@@ -449,11 +462,11 @@ function setupGroupEditorPage() {
       if (withAllFieldsRows.length > 0) {
         let entriesRes = await supabase.from("group_entries").insert(withAllFieldsRows);
 
-        if (entriesRes.error && String(entriesRes.error.message || "").includes("male_teachers")) {
-          entriesRes = await supabase.from("group_entries").insert(withTypeRows);
+        if (entriesRes.error && String(entriesRes.error.message || "").includes("drivers")) {
+          entriesRes = await supabase.from("group_entries").insert(withTeacherRows);
         }
 
-        if (entriesRes.error && String(entriesRes.error.message || "").includes("entry_type")) {
+        if (entriesRes.error && String(entriesRes.error.message || "").includes("male_teachers")) {
           entriesRes = await supabase.from("group_entries").insert(fallbackRows);
         }
 
@@ -571,22 +584,40 @@ function renderFamilyPicker() {
     return;
   }
 
+  const previousValue = familyPicker.value;
+  const query = (familySearchInput?.value || "").trim().toLowerCase();
+
+  const visibleFamilies = [...families]
+    .filter((family) => {
+      if (!query) {
+        return true;
+      }
+      const haystack = `${family.lastName} ${family.address} ${family.phone}`.toLowerCase();
+      return haystack.includes(query);
+    })
+    .sort((a, b) => a.lastName.localeCompare(b.lastName, undefined, { sensitivity: "base" }));
+
   familyPicker.innerHTML = "";
 
-  if (families.length === 0) {
+  if (visibleFamilies.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "No families saved";
+    option.textContent = query ? "No matching families" : "No families saved";
     familyPicker.appendChild(option);
     return;
   }
 
-  families.forEach((family) => {
+  visibleFamilies.forEach((family) => {
     const option = document.createElement("option");
     option.value = family.id;
     option.textContent = `${family.lastName} - ${family.address}`;
     familyPicker.appendChild(option);
   });
+
+  const stillVisible = visibleFamilies.some((family) => family.id === previousValue);
+  if (stillVisible) {
+    familyPicker.value = previousValue;
+  }
 }
 
 function renderGroupTable() {
@@ -602,24 +633,18 @@ function renderGroupTable() {
       return;
     }
 
-    const isStaff = entry.entryType === "staff";
-    if (isStaff) {
-      entry.boys = 0;
-      entry.girls = 0;
-    }
-
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${escapeHtml(family.lastName)}</td>
       <td>${escapeHtml(family.address)}</td>
       <td>${escapeHtml(family.phone)}</td>
-      <td>${isStaff ? "Teacher/Driver" : "Family"}</td>
       <td>${escapeHtml(family.hasDog)}</td>
       <td>${escapeHtml(family.hasCat)}</td>
-      <td><input type="number" class="small-input" min="0" value="${entry.boys}" data-boys="${entry.id}" ${isStaff ? "disabled" : ""} /></td>
-      <td><input type="number" class="small-input" min="0" value="${entry.girls}" data-girls="${entry.id}" ${isStaff ? "disabled" : ""} /></td>
+      <td><input type="number" class="small-input" min="0" value="${entry.boys}" data-boys="${entry.id}" /></td>
+      <td><input type="number" class="small-input" min="0" value="${entry.girls}" data-girls="${entry.id}" /></td>
       <td><input type="number" class="small-input" min="0" value="${entry.maleTeachers || 0}" data-male-teachers="${entry.id}" /></td>
       <td><input type="number" class="small-input" min="0" value="${entry.femaleTeachers || 0}" data-female-teachers="${entry.id}" /></td>
+      <td><input type="number" class="small-input" min="0" value="${entry.drivers || 0}" data-drivers="${entry.id}" /></td>
       <td><button type="button" class="danger" data-remove-entry="${entry.id}">Remove</button></td>
     `;
 
@@ -638,7 +663,7 @@ function renderGroupTable() {
   groupTableBody.querySelectorAll("[data-boys]").forEach((input) => {
     input.addEventListener("input", () => {
       const entry = currentGroup.entries.find((item) => item.id === input.dataset.boys);
-      if (!entry || entry.entryType === "staff") {
+      if (!entry) {
         return;
       }
       entry.boys = Math.max(0, Number(input.value) || 0);
@@ -650,7 +675,7 @@ function renderGroupTable() {
   groupTableBody.querySelectorAll("[data-girls]").forEach((input) => {
     input.addEventListener("input", () => {
       const entry = currentGroup.entries.find((item) => item.id === input.dataset.girls);
-      if (!entry || entry.entryType === "staff") {
+      if (!entry) {
         return;
       }
       entry.girls = Math.max(0, Number(input.value) || 0);
@@ -678,6 +703,18 @@ function renderGroupTable() {
         return;
       }
       entry.femaleTeachers = Math.max(0, Number(input.value) || 0);
+      saveDraftGroup();
+      renderGroupSummary();
+    });
+  });
+
+  groupTableBody.querySelectorAll("[data-drivers]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const entry = currentGroup.entries.find((item) => item.id === input.dataset.drivers);
+      if (!entry) {
+        return;
+      }
+      entry.drivers = Math.max(0, Number(input.value) || 0);
       saveDraftGroup();
       renderGroupSummary();
     });
@@ -802,31 +839,189 @@ function renderGroupSummary() {
   groupSummary.textContent = `${summaryDate} Total kids: ${totals.children}.`;
 }
 
-function exportGroupPdf(groupId) {
+let pdfLibPromise = null;
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-pdf-lib="${src}"]`);
+    if (existing) {
+      if (existing.dataset.loaded === "true") {
+        resolve();
+      } else {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        existing.addEventListener("error", () => reject(new Error(`Failed loading ${src}`)), { once: true });
+      }
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.pdfLib = src;
+    script.addEventListener("load", () => {
+      script.dataset.loaded = "true";
+      resolve();
+    }, { once: true });
+    script.addEventListener("error", () => reject(new Error(`Failed loading ${src}`)), { once: true });
+    document.head.appendChild(script);
+  });
+}
+
+async function ensurePdfLibReady() {
+  if (window.jspdf?.jsPDF && (window.jspdfAutoTable?.default || window.autoTable || window.jspdf?.jsPDF?.API?.autoTable)) {
+    return;
+  }
+
+  if (!pdfLibPromise) {
+    pdfLibPromise = (async () => {
+      await loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+      await loadScriptOnce("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js");
+    })();
+  }
+
+  await pdfLibPromise;
+}
+
+function runAutoTable(doc, options) {
+  if (typeof doc.autoTable === "function") {
+    doc.autoTable(options);
+    return;
+  }
+  if (window.jspdfAutoTable?.default) {
+    window.jspdfAutoTable.default(doc, options);
+    return;
+  }
+  if (typeof window.autoTable === "function") {
+    window.autoTable(doc, options);
+    return;
+  }
+  throw new Error("AutoTable is not available.");
+}
+
+function buildPdfFileName(group) {
+  const safeTitle = (group.title || "groupe")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "groupe";
+  const arrival = String(group.arrivalDate || "").replaceAll("-", "");
+  const departure = String(group.departureDate || "").replaceAll("-", "");
+  return `${safeTitle}-${arrival}-${departure}.pdf`;
+}
+
+async function exportGroupPdf(groupId) {
   const group = groups.find((item) => item.id === groupId);
   if (!group) {
     return;
   }
 
-  const html = buildPrintableGroupHtml(group);
-  const printWindow = window.open("", "_blank", "width=900,height=700");
-  if (!printWindow) {
-    setFeedback("Unable to open print window. Please allow popups.", "error");
-    return;
-  }
+  try {
+    await ensurePdfLibReady();
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
 
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
+    const totals = getTotals(group.entries);
+    const summaryDate = formatDateForSummary(group.arrivalDate, group.departureDate);
+    const teacherMaleTotal = group.entries.reduce((sum, entry) => sum + (entry.maleTeachers || 0), 0);
+    const teacherFemaleTotal = group.entries.reduce((sum, entry) => sum + (entry.femaleTeachers || 0), 0);
+    const totalDrivers = group.entries.reduce((sum, entry) => sum + (entry.drivers || 0), 0);
+    const driverFamilyNames = [...new Set(group.entries
+      .filter((entry) => (entry.drivers || 0) > 0)
+      .map((entry) => {
+        const family = families.find((item) => item.id === entry.familyId);
+        return family ? family.lastName : "";
+      })
+      .filter(Boolean))].join(", ");
+
+    const staffRows = group.entries
+      .filter((entry) => hasStaff(entry))
+      .map((entry) => {
+        const family = families.find((item) => item.id === entry.familyId);
+        if (!family) {
+          return null;
+        }
+        return [family.lastName, family.address, family.phone, String(entry.maleTeachers || 0), String(entry.femaleTeachers || 0), String(entry.drivers || 0)];
+      })
+      .filter(Boolean);
+
+    const familyRows = group.entries
+      .filter((entry) => hasKids(entry))
+      .map((entry) => {
+        const family = families.find((item) => item.id === entry.familyId);
+        if (!family) {
+          return null;
+        }
+        return [
+          family.lastName,
+          family.address,
+          family.phone,
+          formatPetLabelFr(family.hasDog),
+          formatPetLabelFr(family.hasCat),
+          String(entry.boys || 0),
+          String(entry.girls || 0),
+        ];
+      })
+      .filter(Boolean);
+
+    const marginLeft = 40;
+    let cursorY = 44;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(group.title || "Groupe", marginLeft, cursorY);
+    cursorY += 18;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(summaryDate, marginLeft, cursorY);
+    cursorY += 14;
+    doc.text(`Professeurs: ${teacherMaleTotal}+${teacherFemaleTotal} | Chauffeurs: ${totalDrivers} (${driverFamilyNames || "-"})`, marginLeft, cursorY);
+    cursorY += 14;
+    doc.text(`Total enfants: ${totals.children}`, marginLeft, cursorY);
+    cursorY += 20;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Tableau professeurs/chauffeurs", marginLeft, cursorY);
+
+    runAutoTable(doc, {
+      startY: cursorY + 8,
+      head: [["Nom", "Adresse", "Téléphone", "Profs H", "Profs F", "Chauffeurs"]],
+      body: staffRows.length > 0 ? staffRows : [["-", "-", "-", "-", "-", "-"]],
+      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [230, 230, 230], textColor: [20, 20, 20] },
+      margin: { left: marginLeft, right: marginLeft },
+      theme: "grid",
+    });
+
+    let nextY = doc.lastAutoTable?.finalY || cursorY + 100;
+    nextY += 20;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("Tableau familles", marginLeft, nextY);
+
+    runAutoTable(doc, {
+      startY: nextY + 8,
+      head: [["Nom", "Adresse", "Téléphone", "Chien", "Chat", "Garçons", "Filles"]],
+      body: familyRows.length > 0 ? familyRows : [["-", "-", "-", "-", "-", "-", "-"]],
+      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [230, 230, 230], textColor: [20, 20, 20] },
+      margin: { left: marginLeft, right: marginLeft },
+      theme: "grid",
+    });
+
+    doc.save(buildPdfFileName(group));
+    setFeedback("PDF downloaded successfully.", "success");
+  } catch (error) {
+    setFeedback(`PDF export failed: ${error.message}`, "error");
+  }
 }
 
 function buildPrintableGroupHtml(group) {
   const totals = getTotals(group.entries);
 
   const familyRows = group.entries
-    .filter((entry) => !isTeacherOnlyEntry(entry))
+    .filter((entry) => hasKids(entry))
     .map((entry) => {
       const family = families.find((item) => item.id === entry.familyId);
       if (!family) {
@@ -848,7 +1043,7 @@ function buildPrintableGroupHtml(group) {
     .join("");
 
   const staffRows = group.entries
-    .filter((entry) => isTeacherOnlyEntry(entry))
+    .filter((entry) => hasStaff(entry))
     .map((entry) => {
       const family = families.find((item) => item.id === entry.familyId);
       if (!family) {
@@ -862,6 +1057,7 @@ function buildPrintableGroupHtml(group) {
           <td>${escapeHtml(family.phone)}</td>
           <td>${entry.maleTeachers || 0}</td>
           <td>${entry.femaleTeachers || 0}</td>
+          <td>${entry.drivers || 0}</td>
         </tr>
       `;
     })
@@ -869,8 +1065,9 @@ function buildPrintableGroupHtml(group) {
 
   const teacherMaleTotal = group.entries.reduce((sum, entry) => sum + (entry.maleTeachers || 0), 0);
   const teacherFemaleTotal = group.entries.reduce((sum, entry) => sum + (entry.femaleTeachers || 0), 0);
+  const totalDrivers = group.entries.reduce((sum, entry) => sum + (entry.drivers || 0), 0);
   const driverFamilyNames = [...new Set(group.entries
-    .filter((entry) => isTeacherOnlyEntry(entry))
+    .filter((entry) => (entry.drivers || 0) > 0)
     .map((entry) => {
       const family = families.find((item) => item.id === entry.familyId);
       return family ? escapeHtml(family.lastName) : "";
@@ -893,7 +1090,7 @@ function buildPrintableGroupHtml(group) {
       <body>
         <h1>${escapeHtml(group.title)}</h1>
         <p>${formatDateForSummary(group.arrivalDate, group.departureDate)}</p>
-        <p>Professeurs: ${teacherMaleTotal}+${teacherFemaleTotal} | Chauffeurs: ${group.groupDrivers || 0} (${driverFamilyNames || "-"})</p>
+        <p>Professeurs: ${teacherMaleTotal}+${teacherFemaleTotal} | Chauffeurs: ${totalDrivers} (${driverFamilyNames || "-"})</p>
         <p>Total enfants: ${totals.children}</p>
 
         <h3>Tableau professeurs/chauffeurs</h3>
@@ -905,6 +1102,7 @@ function buildPrintableGroupHtml(group) {
               <th>Téléphone</th>
               <th>Profs H</th>
               <th>Profs F</th>
+              <th>Chauffeurs</th>
             </tr>
           </thead>
           <tbody>${staffRows}</tbody>
@@ -930,14 +1128,17 @@ function buildPrintableGroupHtml(group) {
   `;
 }
 
-function isTeacherOnlyEntry(entry) {
-  const teachers = (entry.maleTeachers || 0) + (entry.femaleTeachers || 0);
-  return entry.entryType === "staff" || teachers > 0;
+function hasKids(entry) {
+  return (entry.boys || 0) + (entry.girls || 0) > 0;
+}
+
+function hasStaff(entry) {
+  return (entry.maleTeachers || 0) + (entry.femaleTeachers || 0) + (entry.drivers || 0) > 0;
 }
 
 function getTotals(entries) {
-  const familyEntries = entries.filter((entry) => !isTeacherOnlyEntry(entry));
-  const staffEntries = entries.filter((entry) => isTeacherOnlyEntry(entry));
+  const familyEntries = entries.filter((entry) => hasKids(entry));
+  const staffEntries = entries.filter((entry) => hasStaff(entry));
 
   const boys = familyEntries.reduce((sum, entry) => sum + (entry.boys || 0), 0);
   const girls = familyEntries.reduce((sum, entry) => sum + (entry.girls || 0), 0);
@@ -1029,9 +1230,9 @@ function loadDraftGroup() {
       entries: Array.isArray(parsed.entries)
         ? parsed.entries.map((entry) => ({
             ...entry,
-            entryType: entry.entryType || "family",
             maleTeachers: Math.max(0, Number(entry.maleTeachers) || 0),
             femaleTeachers: Math.max(0, Number(entry.femaleTeachers) || 0),
+            drivers: Math.max(0, Number(entry.drivers) || 0),
           }))
         : [],
     };

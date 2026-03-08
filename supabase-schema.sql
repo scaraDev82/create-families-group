@@ -129,3 +129,15 @@ drop constraint if exists group_entries_teachers_non_negative;
 alter table public.group_entries
 add constraint group_entries_teachers_non_negative
 check (male_teachers >= 0 and female_teachers >= 0);
+
+
+-- Migration for drivers count per group entry
+alter table public.group_entries
+add column if not exists drivers integer not null default 0;
+
+alter table public.group_entries
+drop constraint if exists group_entries_drivers_non_negative;
+
+alter table public.group_entries
+add constraint group_entries_drivers_non_negative
+check (drivers >= 0);
